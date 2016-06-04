@@ -31,6 +31,7 @@ func (g *generator) Generate(targets []*descriptor.File) ([]*plugin.CodeGenerato
 	var files []*plugin.CodeGeneratorResponse_File
 	for _, file := range targets {
 		glog.V(1).Infof("Processing %s", file.GetName())
+		// Attempt to generate the code
 		code, err := applyTemplate(param{File: file, reg: g.reg})
 		if err == errNoTargetService {
 			glog.V(1).Infof("%s: %v", file.GetName(), err)

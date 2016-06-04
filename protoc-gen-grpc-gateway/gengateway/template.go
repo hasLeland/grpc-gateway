@@ -41,6 +41,12 @@ func (b binding) HasQueryParam() bool {
 	return len(fields) > 0
 }
 
+// Builds a DoubleArray of all the fields for a binding that are NOT query
+// parameters.
+// The double array will contain the FieldPath of the body of the binding, if
+// it exists, and the FieldPath of all the PathParams of binding, if binding
+// has any PathParams. Everything that isn't a PathParam or in the Body should
+// thus implicitly be handled as a query parameter.
 func (b binding) QueryParamFilter() queryParamFilter {
 	var seqs [][]string
 	if b.Body != nil {

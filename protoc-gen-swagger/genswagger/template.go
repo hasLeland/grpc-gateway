@@ -271,7 +271,9 @@ func resolveFullyQualifiedNameToSwaggerName(fqn string, messages []string) strin
 	return uniqueNames[fqn]
 }
 
-// Swagger expects paths of the form /path/{string_value} but grpc-gateway paths are expected to be of the form /path/{string_value=strprefix/*}. This should reformat it correctly.
+// Swagger expects paths of the form /path/{string_value} but grpc-gateway
+// paths are expected to be of the form /path/{string_value=strprefix/*}. This
+// should reformat it correctly.
 func templateToSwaggerPath(path string) string {
 	// It seems like the right thing to do here is to just use
 	// strings.Split(path, "/") but that breaks badly when you hit a url like
@@ -323,16 +325,70 @@ func templateToSwaggerPath(path string) string {
 	return strings.Join(parts, "/")
 }
 
+// Add swagger query parameter options to the list of swagger parameters for
+// the current method.
+func addSwaggerQueryParams(meth *descriptor.Method, swag_params *swaggerParametersObject) error {
+
+	for _, field := range meth.RequestType.Fields {
+		is_query_param := true
+		for _, b := range meth.Bindings {
+
+			// If it's in the PathParams, it's not a query parameter
+			for _, parameter := range b.PathParams {
+				if field == parameter.Target {
+					is_query_param = false
+				}
+			}
+
+			if b.Body != nil {
+				// The body contains explicit references to some fields, see if
+				// this field is one of them
+				for _, component := range b.Body.FieldPath {
+					if component.Target == field {
+						is_query_param = false
+					}
+				}
+				// Body is an asterisk, meaning all fields should arrive in the
+				// body. Thus, this field cannot be a query parameter
+				if len(b.Body.FieldPath) == 0 {
+					is_query_param = false
+				}
+			}
+		}
+		if is_query_param {
+			paramType, paramFormat, ok := primitiveSchema(field.GetType())
+			if !ok {
+				return fmt.Errorf("unknown field type %v", field.GetType())
+			}
+			*swag_params = append(*swag_params, swaggerParameterObject{
+				Name:     field.GetName(),
+				In:       "query",
+				Required: true,
+				Type:     paramType,
+				Format:   paramFormat,
+			})
+		}
+	}
+	return nil
+}
+
 func renderServices(services []*descriptor.Service, paths swaggerPathsObject, reg *descriptor.Registry) error {
-	// Correctness of svcIdx and methIdx depends on 'services' containing the services in the same order as the 'file.Service' array.
+
+	// Correctness of svcIdx and methIdx depends on 'services' containing the
+	// services in the same order as the 'file.Service' array.
 	for svcIdx, svc := range services {
 		for methIdx, meth := range svc.Methods {
 			if meth.GetClientStreaming() || meth.GetServerStreaming() {
 				return fmt.Errorf(`service uses streaming, which is not currently supported. Maybe you would like to implement it? It wouldn't be that hard and we don't bite. Why don't you send a pull request to https://github.com/gengo/grpc-gateway?`)
 			}
+			// Iterate over all the swagger parameters
 			for _, b := range meth.Bindings {
-				// Iterate over all the swagger parameters
 				parameters := swaggerParametersObject{}
+
+				// Handle query parameters
+				addSwaggerQueryParams(meth, &parameters)
+
+				// Add path parameters to the swagger spec
 				for _, parameter := range b.PathParams {
 
 					var paramType, paramFormat string
